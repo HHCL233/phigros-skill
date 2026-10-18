@@ -391,6 +391,12 @@ def validate(chart):
                 err(f"{lctx}.speedEvents 应为数组")
         if "extended" in line:
             check_extended(line["extended"], ctx)
+        if layers and not any(
+            isinstance(layer, dict) and isinstance(layer.get("alphaEvents"), list) and layer["alphaEvents"]
+            for layer in layers
+        ):
+            warn(f"{ctx}: 所有 eventLayers 都没有 alphaEvents 事件"
+                 f"（要求每条判定线至少一条 alpha 事件，值 0~255，如 [0,0,1] 覆盖全曲）")
         if "notes" in line:
             check_notes(line["notes"], line.get("numOfNotes"), ctx)
             for n in line["notes"]:

@@ -26,12 +26,28 @@ def control_pair(key, value):
     ]
 
 
+def default_alpha_event():
+    """恒定 alpha（255）覆盖全曲：skill 要求每条判定线至少一条 alphaEvents（0~255）。"""
+    return {
+        "bezier": 0,
+        "bezierPoints": [0.0, 0.0, 0.0, 0.0],
+        "easingLeft": 0.0,
+        "easingRight": 1.0,
+        "easingType": 1,
+        "start": 255.0,
+        "startTime": [0, 0, 1],
+        "end": 255.0,
+        "endTime": [1000, 0, 1],
+        "linkgroup": 0,
+    }
+
+
 def empty_event_layer():
     return {
         "moveXEvents": [],
         "moveYEvents": [],
         "rotateEvents": [],
-        "alphaEvents": [],
+        "alphaEvents": [default_alpha_event()],
         "speedEvents": [],
     }
 
