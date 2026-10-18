@@ -56,17 +56,27 @@ def beat(t):
 
 def check_ascending(events, ctx, kind):
     prev = None
+    prev_end = None  # 上一事件的结束拍，用于同 kind 区间重叠检查
+    overlap_hit = False
     for e in events:
         t = e.get("startTime")
         if not isinstance(t, list) or len(t) != 3:
             continue
+        b = beat(t)
+        et = e.get("endTime")
+        b_end = beat(et) if isinstance(et, list) and len(et) == 3 and all(is_num(x) for x in et) else None
         if prev is not None:
-            b = beat(t)
             if b < prev:
                 err(f"{ctx}: {kind} 事件未按时间升序（{prev:.4f} -> {b:.4f}）")
             elif b == prev:
                 warn(f"{ctx}: {kind} 存在相同 startTime 的事件 @{t!r}")
-        prev = beat(t)
+            # 同 kind 事件区间重叠：同层内两个同类型事件在相同时间内重复（真实谱 12 张实测 0 例）
+            if b_end is not None and prev_end is not None and b < prev_end - 1e-9 and not overlap_hit:
+                warn(f"{ctx}: {kind} 事件时间区间重叠（上一事件结束 {prev_end:.4f} 拍 > 当前开始 {b:.4f} 拍）"
+                     f"（用户要求：同一判定线同一层内相同时间不要有两个同类型重复事件）")
+                overlap_hit = True  # 每层每 kind 只报一次，避免刷屏
+        prev = b
+        prev_end = b_end
 
 
 def check_control_array(arr, key, ctx):
@@ -248,11 +258,11 @@ def check_notes(notes, numOfNotes, ctx):
                 warn(f"{where}: Tap 位于长条（Hold）末尾的同 x 位置"
                      f"（用户要求：Hold 结束的同 x 不放 Tap；Drag/Flick 接续长条是允许的）")
             if t == 1 and not n.get("isFake"):
-                # Hold 期间近距 Tap：同线 Hold 持续期间（含首时刻），|Δx| < 100 的 Tap 不要
-                if any(hs - 1e-6 <= b < he - 1e-6 and abs(n["positionX"] - hx) < 100
+                # Hold 期间近距 Tap：同线 Hold 持续期间（含首时刻），|Δx| ≤ 50 的 Tap 不要（用户要求间距必须 >50）
+                if any(hs - 1e-6 <= b < he - 1e-6 and abs(n["positionX"] - hx) <= 50
                        for hs, he, hx in hold_spans):
-                    warn(f"{where}: Tap 与进行中的长条（Hold）距离过近（同刻 |Δx| < 100）"
-                         f"（用户要求：长条与 Tap 同一时间距离不要过近）")
+                    warn(f"{where}: Tap 与进行中的长条（Hold）距离过近（|Δx| ≤ 50）"
+                         f"（用户要求：相同时间内 Tap 与 Hold 间距必须 > 50）")
                 # Drag 后紧跟 x 相近的 Tap：gap ≤ 1/4 拍 且 |Δx| < 50
                 if any(0 < b - dg <= 0.25 + 1e-6 and abs(n["positionX"] - dx) < 50
                        for dg, dx in drag_starts):
@@ -274,9 +284,35 @@ def check_notes(notes, numOfNotes, ctx):
                 warn(f"{where}: 疑似重复音符 startTime={sig[0]} type={t} x={sig[2]}")
             seen.add(sig)
 
+    # 同刻间距检查：同判定线同一时刻，Tap-Tap 或 Tap-Hold 的 x 间距必须 > 50（用户明确要求）
+    taps_by_beat = {}  # beat -> [(x, where)]
+    holds_by_beat = {}  # beat -> [x]
+    for i, n in enumerate(notes):
+        if not isinstance(n, dict) or n.get("isFake"):
+            continue
+        if not (isinstance(n.get("startTime"), list) and len(n["startTime"]) == 3):
+            continue
+        b = beat(n["startTime"])
+        if n.get("type") == 1 and is_num(n.get("positionX")):
+            taps_by_beat.setdefault(b, []).append((n["positionX"], i))
+        elif n.get("type") == 2 and is_num(n.get("positionX")):
+            holds_by_beat.setdefault(b, []).append(n["positionX"])
+    for b, items in taps_by_beat.items():
+        for i in range(len(items)):
+            for j in range(i + 1, len(items)):
+                if abs(items[i][0] - items[j][0]) <= 50:
+                    warn(f"{ctx}.notes[{items[j][1]}]: 同刻两个 Tap 间距 ≤ 50"
+                         f"（x={items[i][0]} 与 x={items[j][0]} @beat {b:.4f}；用户要求：相同时间内同判定线两个 Tap 间距必须 > 50）")
+        for tx, idx in items:
+            for hx in holds_by_beat.get(b, []):
+                if abs(tx - hx) <= 50:
+                    warn(f"{ctx}.notes[{idx}]: 同刻 Tap 与 Hold 间距 ≤ 50"
+                         f"（Tap x={tx} 与 Hold x={hx} @beat {b:.4f}；用户要求：相同时间内同判定线 Tap 与 Hold 间距必须 > 50）")
+
 
 def check_line_speed(line, ctx):
-    """有音符的判定线：各层 speedEvents 求和后在音符时刻的值应 >= 10（0 速绑线表演除外，仅警告）。"""
+    """有音符的判定线：各层 speedEvents 求和后在音符时刻的值应 >= 10（仅警告）。
+    可判音符位于 0 速线（note 绑线）单独警告——用户要求不使用任何 note 绑线。"""
     notes = line.get("notes")
     if not isinstance(notes, list) or not notes:
         return
@@ -299,6 +335,7 @@ def check_line_speed(line, ctx):
         warn(f"{ctx}: 有音符但未定义 speedEvents，速度按 0 处理（音符线建议至少 10 速）")
         return
     speeds = []
+    zero_bind = 0
     for n in notes:
         if not isinstance(n, dict):
             continue
@@ -316,10 +353,14 @@ def check_line_speed(line, ctx):
                     break
             total += v
         speeds.append(total)
+        if total <= 1e-6 and not n.get("isFake"):
+            zero_bind += 1
+    if zero_bind:
+        warn(f"{ctx}: 存在可判音符位于 0 速线（note 绑线，{zero_bind} 个音符时刻）"
+             f"——用户要求：不使用任何 note 绑线，演出需求请用假音符（isFake=1）")
     if speeds and min(speeds) < 10:
         bad = sum(1 for s in speeds if s < 10)
-        warn(f"{ctx}: 音符线速度低于 10（最低 {min(speeds):g}，涉及 {bad}/{len(speeds)} 个音符时刻）；"
-             f"仅 0 速绑线表演等特殊情况可低于 10 速，若属表演可忽略此警告")
+        warn(f"{ctx}: 音符线速度低于 10（最低 {min(speeds):g}，涉及 {bad}/{len(speeds)} 个音符时刻）")
 
 
 def validate(chart):
