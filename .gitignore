@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[oc]
+.venv/
+venv/
+
+# 生成产物
+out/
+*.pez
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 音频与图片素材
+*.mp3
+*.ogg
+*.wav
+*.flac
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.gif
