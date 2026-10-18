@@ -26,28 +26,29 @@ def control_pair(key, value):
     ]
 
 
-def default_alpha_event():
-    """恒定 alpha（255）覆盖全曲：skill 要求每条判定线至少一条 alphaEvents（0~255）。"""
+def default_alpha_event(alpha=255.0):
+    """恒定 alpha 覆盖全曲：skill 要求每条判定线至少一条 alphaEvents（0~255）。
+    音符线用 255；表演线（无可判音符）不得超过 200（skill 规则）。"""
     return {
         "bezier": 0,
         "bezierPoints": [0.0, 0.0, 0.0, 0.0],
         "easingLeft": 0.0,
         "easingRight": 1.0,
         "easingType": 1,
-        "start": 255.0,
+        "start": alpha,
         "startTime": [0, 0, 1],
-        "end": 255.0,
+        "end": alpha,
         "endTime": [1000, 0, 1],
         "linkgroup": 0,
     }
 
 
-def empty_event_layer():
+def empty_event_layer(alpha=255.0):
     return {
         "moveXEvents": [],
         "moveYEvents": [],
         "rotateEvents": [],
-        "alphaEvents": [default_alpha_event()],
+        "alphaEvents": [default_alpha_event(alpha)],
         "speedEvents": [],
     }
 
@@ -67,7 +68,7 @@ def default_incline_event():
     }
 
 
-def default_judge_line(group=0):
+def default_judge_line(group=0, alpha=255.0):
     return {
         "Group": group,
         "Name": "Untitled",
@@ -75,7 +76,7 @@ def default_judge_line(group=0):
         "alphaControl": control_pair("alpha", 1.0),
         "anchor": [0.5, 0.5],
         "bpmfactor": 1.0,
-        "eventLayers": [empty_event_layer()],
+        "eventLayers": [empty_event_layer(alpha)],
         "extended": {"inclineEvents": [default_incline_event()]},
         "father": -1,
         "isCover": 1,
@@ -194,7 +195,10 @@ def main(argv=None):
         "BPMList": bpm_list,
         "META": meta,
         "judgeLineGroup": ["Default"],
-        "judgeLineList": [default_judge_line(0) for _ in range(max(1, args.lines))],
+        "judgeLineList": [
+            default_judge_line(0) if i == 0 else default_judge_line(0, alpha=200.0)
+            for i in range(max(1, args.lines))
+        ],
         "multiScale": 1.0,
         "multiLineString": "",
     }

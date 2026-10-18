@@ -166,12 +166,19 @@ def check_extended(extended, ctx):
                     check_timet(e.get("endTime", [0, 0, 1]), f"{ctx}.textEvents.endTime")
             continue
         if kind == "colorEvents":
+            # 真实谱面两种写法：字符串 "r g b" 或 RGB 数组 [r,g,b]（RPE 1.7 导出）
             for e in events:
-                if isinstance(e, dict) and isinstance(e.get("start"), str):
-                    parts = e["start"].split()
+                if not isinstance(e, dict):
+                    continue
+                s = e.get("start")
+                if isinstance(s, str):
+                    parts = s.split()
                     if len(parts) != 3 or not all(p.lstrip("-").isdigit() for p in parts):
                         err(f"{ctx}.colorEvents: 值应为 'r g b' 整数三元组字符串: {e!r}")
-                continue
+                elif isinstance(s, list):
+                    if len(s) != 3 or not all(isinstance(v, (int, float)) and 0 <= v <= 255 for v in s):
+                        warn(f"{ctx}.colorEvents: RGB 数组应为 3 个 0~255 分量: {e!r}")
+            continue
         for e in events:
             check_normal_event(e, ctx, kind, extended=True)
         check_ascending(events, ctx, kind)
@@ -187,6 +194,17 @@ def check_notes(notes, numOfNotes, ctx):
     prev_nonhold = None
     prev_hold = None
     seen = set()
+    hold_ends = []  # (beat, x)：非假 Hold 的结束时刻与 x，用于"长条末尾同 x 不放 Tap"检查
+    hold_spans = []  # (start, end, x)：Hold 持续区间，用于"Hold 期间近距 Tap"检查
+    drag_starts = []  # (beat, x)：非假 Drag 起始，用于"Drag 后紧跟 x 相近 Tap"检查
+    for n in notes:
+        if isinstance(n, dict) and n.get("type") == 2 and not n.get("isFake") \
+                and isinstance(n.get("endTime"), list) and is_num(n.get("positionX")):
+            hold_ends.append((beat(n["endTime"]), n["positionX"]))
+            hold_spans.append((beat(n["startTime"]), beat(n["endTime"]), n["positionX"]))
+        if isinstance(n, dict) and n.get("type") == 4 and not n.get("isFake") \
+                and is_num(n.get("positionX")):
+            drag_starts.append((beat(n["startTime"]), n["positionX"]))
     for i, n in enumerate(notes):
         where = f"{ctx}.notes[{i}]"
         if not isinstance(n, dict):
@@ -221,6 +239,25 @@ def check_notes(notes, numOfNotes, ctx):
             if not is_num(n["speed"]) or not is_num(n["visibleTime"]):
                 err(f"{where}: speed/visibleTime 应为数值: {n!r}")
             b = beat(n["startTime"])
+            if b < 1 - 1e-6 and not n.get("isFake"):
+                warn(f"{where}: 可判音符早于 beat [1,0,1]"
+                     f"（用户要求：开头不出 note，最早 1:0/1，且开头建议整段纯表演）")
+            if t == 1 and not n.get("isFake") and any(
+                abs(b - he) < 1e-6 and abs(n["positionX"] - hx) < 1e-6 for he, hx in hold_ends
+            ):
+                warn(f"{where}: Tap 位于长条（Hold）末尾的同 x 位置"
+                     f"（用户要求：Hold 结束的同 x 不放 Tap；Drag/Flick 接续长条是允许的）")
+            if t == 1 and not n.get("isFake"):
+                # Hold 期间近距 Tap：同线 Hold 持续期间（含首时刻），|Δx| < 100 的 Tap 不要
+                if any(hs - 1e-6 <= b < he - 1e-6 and abs(n["positionX"] - hx) < 100
+                       for hs, he, hx in hold_spans):
+                    warn(f"{where}: Tap 与进行中的长条（Hold）距离过近（同刻 |Δx| < 100）"
+                         f"（用户要求：长条与 Tap 同一时间距离不要过近）")
+                # Drag 后紧跟 x 相近的 Tap：gap ≤ 1/4 拍 且 |Δx| < 50
+                if any(0 < b - dg <= 0.25 + 1e-6 and abs(n["positionX"] - dx) < 50
+                       for dg, dx in drag_starts):
+                    warn(f"{where}: Tap 紧跟在 Drag 之后且 x 相近（间隔 ≤ 1/4 拍、|Δx| < 50）"
+                         f"（用户要求：不要出现一个 Drag 后紧跟一个 x 相近的 Tap）")
             if t == 2:
                 saw_hold = True
                 if prev_hold is not None and b < prev_hold:
@@ -397,6 +434,24 @@ def validate(chart):
         ):
             warn(f"{ctx}: 所有 eventLayers 都没有 alphaEvents 事件"
                  f"（要求每条判定线至少一条 alpha 事件，值 0~255，如 [0,0,1] 覆盖全曲）")
+        # 表演线 alpha 上限：无可判音符（纯表演/纯假音符）的线 alpha 不得大于 200
+        has_judge = any(
+            isinstance(n, dict) and not n.get("isFake") for n in (line.get("notes") or [])
+        )
+        if layers and not has_judge:
+            for layer in layers:
+                if not isinstance(layer, dict):
+                    continue
+                mx = None
+                for e in (layer.get("alphaEvents") or []):
+                    if isinstance(e, dict):
+                        for key in ("start", "end"):
+                            v = e.get(key)
+                            if is_num(v):
+                                mx = v if mx is None else max(mx, v)
+                if mx is not None and mx > 200:
+                    warn(f"{ctx}: 表演判定线 alpha 最大 {mx} 大于 200"
+                         f"（要求表演线 alpha 不大于 200，保持背景感；真实谱面常见 255 属风格差异）")
         if "notes" in line:
             check_notes(line["notes"], line.get("numOfNotes"), ctx)
             for n in line["notes"]:
