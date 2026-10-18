@@ -309,6 +309,37 @@ def check_notes(notes, numOfNotes, ctx):
                     warn(f"{ctx}.notes[{idx}]: 同刻 Tap 与 Hold 间距 ≤ 50"
                          f"（Tap x={tx} 与 Hold x={hx} @beat {b:.4f}；用户要求：相同时间内同判定线 Tap 与 Hold 间距必须 > 50）")
 
+    # 双押海 / 纵连过长检查：均为高密度手段，用户要求少用（仅非假 Tap）
+    if taps_by_beat:
+        bs = sorted(taps_by_beat)
+        cur = 0
+        max_dd = 0
+        for i, b in enumerate(bs):
+            if len(taps_by_beat[b]) >= 2 and i > 0 and b - bs[i - 1] <= 0.26 + 1e-9:
+                cur += 1
+            elif len(taps_by_beat[b]) >= 2:
+                cur = 1
+            else:
+                cur = 0
+            max_dd = max(max_dd, cur)
+        if max_dd > 4:
+            warn(f"{ctx}: 双押海过长（最长连续 {max_dd} 组双押 > 4）"
+                 f"——用户要求：少用双押海，单段 ≤4 组即收，穿插单点/交互/Drag")
+        by_x = {}
+        for b, items in taps_by_beat.items():
+            for x, _ in items:
+                by_x.setdefault(x, []).append(b)
+        max_jack = 0
+        for x, bl in by_x.items():
+            bl.sort()
+            cur = 1 if bl else 0
+            for i in range(1, len(bl)):
+                cur = cur + 1 if bl[i] - bl[i - 1] <= 0.26 + 1e-9 else 1
+                max_jack = max(max_jack, cur)
+        if max_jack > 6:
+            warn(f"{ctx}: 同 x 纵连过长（最长 {max_jack} 连 > 6）"
+                 f"——用户要求：少用纵连，单段 ≤6 连即收")
+
 
 def check_line_speed(line, ctx):
     """有音符的判定线：各层 speedEvents 求和后在音符时刻的值应 >= 10（仅警告）。
