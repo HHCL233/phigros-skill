@@ -388,7 +388,7 @@ def check_line_speed(line, ctx):
             zero_bind += 1
     if zero_bind:
         warn(f"{ctx}: 存在可判音符位于 0 速线（note 绑线，{zero_bind} 个音符时刻）"
-             f"——用户要求：不使用任何 note 绑线，演出需求请用假音符（isFake=1）")
+             f"——用户要求：不使用任何 note 绑线，0 速线不放音符；演出改用手法库线运动/alpha/文字（假音符亦禁用）")
     if speeds and min(speeds) < 10:
         bad = sum(1 for s in speeds if s < 10)
         warn(f"{ctx}: 音符线速度低于 10（最低 {min(speeds):g}，涉及 {bad}/{len(speeds)} 个音符时刻）")
@@ -506,7 +506,7 @@ def validate(chart):
         ):
             warn(f"{ctx}: 所有 eventLayers 都没有 alphaEvents 事件"
                  f"（要求每条判定线至少一条 alpha 事件，值 0~255，如 [0,0,1] 覆盖全曲）")
-        # 表演线 alpha 上限：无可判音符（纯表演/纯假音符）的线 alpha 不得大于 200
+        # 表演线 alpha 上限：无可判音符的线（纯表演/道具线）alpha 不得大于 200
         has_judge = any(
             isinstance(n, dict) and not n.get("isFake") for n in (line.get("notes") or [])
         )
