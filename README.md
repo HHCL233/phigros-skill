@@ -9,7 +9,7 @@
 - **完整工作流**（SKILL.md 定义 7 步）：接收音频 → BPM/offset 检测 → 难度确认 → 生成骨架 → 排键 → 校验 → 打包 `.pez`
 - **RPE 格式规范**（references/rpe-format.md）：TimeT 时间系统、事件系统、音符规则，均经真实谱面验证
 - **制谱指南**（references/charting.md）：采音分层、难度密度标尺、真实谱面画像、手感红线、表演规范
-- **配置库与表演手法库**（references/configs.md）：从真实谱面归纳的键型配置（单点/双押、交互、纵连、楼梯、Hold、Drag 流、Flick 等，A~H 编目）与复杂表演手法（P~S 编目），AI 推荐优先使用库内配置与手法，也可按实际情况调整或新增
+- **配置库与表演手法库**（references/configs.md）：从真实谱面归纳的键型配置（单点/双押、交互、纵连、楼梯、Hold、Drag 流、Flick、拆线轮转等，A~I 编目）与复杂表演手法（P~S 编目），AI 推荐优先使用库内配置与手法，也可按实际情况调整或新增
 - **缓动手册**（references/easing.md）：RPE easingType 0~29 的行为与选用建议
 - **工具脚本**（scripts/）：
   - `scaffold.py` — 生成谱面骨架（chart JSON + info.txt，默认 1 主音符线 + 5 表演线）

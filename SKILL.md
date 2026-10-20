@@ -12,7 +12,7 @@ description: 为音乐编写 Phigros 谱面（RPE JSON 与 .pez 打包）。Use 
 | 文档 | 内容 | 何时读 |
 | --- | --- | --- |
 | [references/charting.md](references/charting.md) | 采音、难度标尺、真实谱面画像、手感红线、表演规范、生成顺序 | 步骤 2 起 |
-| [references/configs.md](references/configs.md) | 配置库 A~H + 表演手法库 P~S（排键与演出的推荐素材库） | 步骤 3 |
+| [references/configs.md](references/configs.md) | 配置库 A~I + 表演手法库 P~S（排键与演出的推荐素材库） | 步骤 3 |
 | [references/rpe-format.md](references/rpe-format.md) | 格式规范全文（字段、事件、control 数组、时间系统） | 步骤 4 |
 | [references/easing.md](references/easing.md) | 缓动编号速查 | 步骤 3 |
 
@@ -31,7 +31,7 @@ description: 为音乐编写 Phigros 谱面（RPE JSON 与 .pez 打包）。Use 
    **旋律/音域/时值走向可用于判段落情感**（音高上行=推进紧张、下行+长音=回落抒情、音域整体偏高=明亮亢奋、
    同音反复偏低=压抑蓄力），据此定该段密度与演出幅度；判据表见 charting.md「采音」第 5 步。
    读图与采音步骤见 charting.md「采音」；不得无频谱依据地排键。
-3. **排键与表演**：配置**推荐优先使用** configs.md 配置库（A~H），表演**推荐优先使用**手法库（P~S），可按实际情况调整参数或新增配置；手感红线见 charting.md，缓动见 easing.md。
+3. **排键与表演**：配置**推荐优先使用** configs.md 配置库（A~I），表演**推荐优先使用**手法库（P~S），可按实际情况调整参数或新增配置；手感红线见 charting.md，缓动见 easing.md。
    键型骨架用 `python3 scripts/gen_config.py --config <编号> --start <TimeT> --end <TimeT> --x <首音x> --div <几分>`
    生成（只输出 notes JSON，写进哪条判定线由 AI 决定）。
    **生成结果只是骨架，必须按采音逐音微调**：挪拍位贴合 onset、改 x/类型、镜像、增删音、换拍位避免配置重复，
@@ -60,7 +60,7 @@ description: 为音乐编写 Phigros 谱面（RPE JSON 与 .pez 打包）。Use 
 ## 排键与表演红线（scripts/validate_chart.py 自动检查）
 
 - **采音必须有频谱依据**：先跑 `scripts/spectrum.py` 出频谱图与主频表，据频谱图/`_peaks.csv`（配合 segment_analyze 的 onset）定位打点，不得凭空排键。
-- 排键**推荐优先使用** configs.md 配置库（A~H）的配置；可按实际情况调整参数（x/拍位/方向/镜像/步进）或新增配置。
+- 排键**推荐优先使用** configs.md 配置库（A~I）的配置；可按实际情况调整参数（x/拍位/方向/镜像/步进）或新增配置。
 - **排键整齐**：全曲统一一套 x 网格（75 系 / 67.5 系 / 自定义对称网格），段内步进规整、左右对称；
   音符 x 大量落在网格外时校验器给 WARNING（乱序坐标少用，配置库 B2 仅在用户要求该风格时用）。
 - **谱面不单调（重复部分少）**：同一配置/手法连续原样复读不超过 2~3 次，之后必须变型（换 x / 镜像 / 换拍位 / 换配置 / 换线 / 换音型）；
