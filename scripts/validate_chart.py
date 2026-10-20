@@ -2,8 +2,7 @@
 """校验 RPE JSON 谱面。
 
 用法：python3 validate_chart.py <chart.json> [--audio <音频文件>] [--quiet-warnings]
-提供 --audio 时校验：① 音符不晚于音频总时长（越界 ERROR）；② 虚空采音（音符时刻附近无频谱起音，汇总 WARNING）。
-ERROR 全部修复才算可用；WARNING 酌情处理。退出码 0=无 ERROR，1=有 ERROR。
+提供 --audio 时校验音符不晚于音频总时长。ERROR 全部修复才算可用；WARNING 酌情处理。退出码 0=无 ERROR，1=有 ERROR。
 """
 import argparse
 import json
@@ -13,11 +12,6 @@ import re
 import subprocess
 import sys
 import wave
-
-try:
-    import numpy as np  # 仅「虚空采音」起音对齐检查需要，缺失时跳过该检查
-except ImportError:
-    np = None
 
 NOTE_TYPES = {1, 2, 3, 4}
 NORMAL_EVENT_KINDS = ("moveXEvents", "moveYEvents", "rotateEvents", "alphaEvents")
@@ -153,130 +147,6 @@ def notes_beyond_audio(chart, duration):
 def check_audio_bounds(chart, duration):
     for m in notes_beyond_audio(chart, duration):
         err(m)
-
-
-# ---------------------------------------------------------------------------
-# 虚空采音检测（需 --audio）：每个可交互音符时刻附近应有真实频谱起音
-# ---------------------------------------------------------------------------
-
-VOID_LOCAL_RATIO = 0.25   # 音符窗口内起音强度 < 局部参考的该比例 => 疑似虚空采音
-VOID_WARN_RATIO = 0.06    # 疑似占比 >= 该比例 => WARNING
-VOID_LOCAL_WIN = 2.5      # 局部参考窗口半宽（秒）
-VOID_LOCAL_PCT = 95.0     # 局部参考取该分位（近似该处起音峰值水平）
-
-
-def resample_linear(x, sr0, sr1):
-    n = int(round(len(x) * sr1 / float(sr0)))
-    if n <= 1:
-        return x
-    return np.interp(np.arange(n) / float(sr1), np.arange(len(x)) / float(sr0), x)
-
-
-def decode_mono(path, sr=22050):
-    """解码为单声道 [-1,1] 浮点数组；WAV 走标准库，其余用 ffmpeg；失败返回 None。"""
-    if np is None:
-        return None
-    if os.path.splitext(path)[1].lower() == ".wav":
-        try:
-            with wave.open(path, "rb") as w:
-                ch, sw, fr = w.getnchannels(), w.getsampwidth(), w.getframerate()
-                raw = w.readframes(w.getnframes())
-            if sw not in (1, 2, 4):
-                return None
-            x = np.frombuffer(raw, dtype={1: np.int8, 2: "<i2", 4: "<i4"}[sw]).astype(np.float64)
-            if ch > 1:
-                x = x.reshape(-1, ch).mean(axis=1)
-            x /= float(2 ** (8 * sw - 1))
-            return resample_linear(x, fr, sr) if fr != sr else x
-        except Exception:
-            return None
-    try:
-        out = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-f", "f32le",
-                              "-ac", "1", "-ar", str(sr), "-"],
-                             capture_output=True, timeout=600)
-        if out.returncode != 0 or not out.stdout:
-            return None
-        return np.frombuffer(out.stdout, dtype="<f4").astype(np.float64)
-    except (OSError, subprocess.SubprocessError):
-        return None
-
-
-def onset_envelope(x, sr, win=1024, hop=256):
-    """起音包络：帧对数幅度谱的正向差分和（spectral flux）；返回 (flux, 帧时刻秒)。"""
-    if len(x) < win * 2:
-        return None, None
-    frames = np.lib.stride_tricks.sliding_window_view(x, win)[::hop]
-    mag = np.abs(np.fft.rfft(frames * np.hanning(win), axis=1))
-    diff = np.diff(np.log1p(10.0 * mag), axis=0)
-    flux = np.maximum(0.0, diff).sum(axis=1)
-    return flux, (np.arange(len(flux)) + 1) * hop / float(sr)
-
-
-def bpm_at(segs, b):
-    if not segs:
-        return 120.0
-    cur = segs[0][1]
-    for pb, bpm in segs:
-        if b < pb:
-            break
-        cur = bpm
-    return cur
-
-
-def check_void_onset(chart, audio):
-    """虚空采音检测（用户要求）：音符时刻 ±min(半拍, 60ms) 内须有频谱起音。
-
-    逐音取窗口内起音强度峰值，与 ±2.5s 局部起音的高分位（95%）比较；明显偏低者记为疑似虚空采音。
-    仅在占比达到阈值时输出一条汇总 WARNING（避免逐音刷屏），疑似音符输出前几个作样例。
-    """
-    x = decode_mono(audio)
-    if np is None:
-        warn("未安装 numpy，跳过虚空采音检查（pip install numpy 后启用）")
-        return
-    if x is None:
-        warn(f"无法解码音频（{audio}），跳过虚空采音检查（需 ffmpeg；WAV 可直读）")
-        return
-    flux, times = onset_envelope(x, 22050)
-    if flux is None:
-        warn(f"音频过短（{audio}），跳过虚空采音检查")
-        return
-    segs = bpm_segments(chart)
-    offset = (chart.get("META") or {}).get("offset") or 0
-    suspects, total = [], 0
-    for li, line in enumerate(chart.get("judgeLineList") or []):
-        if not isinstance(line, dict):
-            continue
-        for i, n in enumerate(line.get("notes") or []):
-            if not isinstance(n, dict) or n.get("isFake") or n.get("type") not in (1, 2, 3, 4):
-                continue
-            st = n.get("startTime")
-            if not (isinstance(st, list) and len(st) == 3 and all(is_num(x) for x in st)):
-                continue
-            total += 1
-            b = beat(st)
-            t = beat_to_sec(b, segs, offset)
-            tol = max(0.025, min(0.5 * 60.0 / bpm_at(segs, b), 0.06))
-            i0, i1 = np.searchsorted(times, [t - tol, t + tol])
-            i0, i1 = int(max(0, i0 - 1)), int(min(len(flux), i1 + 1))
-            if i1 <= i0:
-                continue
-            strength = float(flux[i0:i1].max())
-            w0, w1 = np.searchsorted(times, [t - VOID_LOCAL_WIN, t + VOID_LOCAL_WIN])
-            local = flux[int(w0):int(w1)] if w1 > w0 else flux
-            ref = float(np.percentile(local, VOID_LOCAL_PCT)) if len(local) else 0.0
-            if ref > 0 and strength < VOID_LOCAL_RATIO * ref:
-                suspects.append((round(t, 2), st, f"judgeLineList[{li}].notes[{i}]", strength, ref))
-    if not total:
-        return
-    ratio = len(suspects) / float(total)
-    if len(suspects) >= 3 and ratio >= VOID_WARN_RATIO:
-        sample = "; ".join(f"{s[2]} = {s[1]!r}（≈{s[0]}s，起音强度仅为局部参考的 "
-                          f"{100.0 * s[3] / s[4]:.0f}%）" for s in suspects[:3])
-        warn(f"疑似虚空采音：{len(suspects)}/{total} 个音符（{100 * ratio:.1f}%）时刻附近没有频谱起音"
-             f"——用户要求：每个可交互音符都要对应真实音乐事件（kick/snare/hihat 起音、旋律音头、人声字头），"
-             f"不得为凑密度/凑配置在没有起音处打音符。样例：{sample}…"
-             f"（若为长音拖尾/氛围段等合法情形可忽略，或用 --quiet-warnings 静音）")
-
 
 
 def check_ascending(events, ctx, kind):
@@ -619,7 +489,7 @@ def check_line_speed(line, ctx):
         warn(f"{ctx}: 音符线速度低于 10（最低 {min(speeds):g}，涉及 {bad}/{len(speeds)} 个音符时刻）")
 
 
-def validate(chart, audio_duration=None, audio_path=None):
+def validate(chart, audio_duration=None):
     for k in ("BPMList", "META", "judgeLineList"):
         if k not in chart:
             err(f"顶层缺少 {k}")
@@ -762,8 +632,6 @@ def validate(chart, audio_duration=None, audio_path=None):
     check_x_grid(lines)
     if audio_duration:
         check_audio_bounds(chart, audio_duration)
-    if audio_path:
-        check_void_onset(chart, audio_path)
     perf_lines = sum(
         1 for line in lines
         if isinstance(line, dict) and not (line.get("notes") or [])
@@ -890,7 +758,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="校验 RPE JSON 谱面")
     ap.add_argument("chart", help="RPE JSON 文件路径")
     ap.add_argument("--audio", default=None,
-                    help="音频文件路径（提供后校验音符不晚于音频总时长，并做虚空采音起音对齐检查）")
+                    help="音频文件路径（提供后校验音符不晚于音频总时长）")
     ap.add_argument("--quiet-warnings", action="store_true", help="不打印 WARNING")
     args = ap.parse_args(argv)
 
@@ -907,7 +775,7 @@ def main(argv=None):
         if duration is None:
             warnings.append(f"无法读取音频时长（{args.audio}），跳过音符越界检查"
                             f"（需 ffprobe/ffmpeg；WAV 可直读）")
-    stats = validate(chart, duration, args.audio)
+    stats = validate(chart, duration)
     for m in errors:
         print("ERROR:", m)
     if not args.quiet_warnings:

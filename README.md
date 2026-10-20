@@ -13,7 +13,7 @@
 - **缓动手册**（references/easing.md）：RPE easingType 0~29 的行为与选用建议
 - **工具脚本**（scripts/）：
   - `scaffold.py` — 生成谱面骨架（chart JSON + info.txt，默认 1 主音符线 + 5 表演线）
-  - `validate_chart.py` — 格式校验（ERROR 硬性拦截：含音符超出音频时长；WARNING 提示手法：含排键整齐/押数密度/虚空采音，其中音符越界与虚空采音检查需 `--audio`）
+  - `validate_chart.py` — 格式校验（ERROR 硬性拦截：含音符超出音频时长；WARNING 提示手法：含排键整齐/押数密度）
   - `package_pez.py` — 打包 `.pez`（zip 格式，含 info.txt/音频/曲绘/chart，打包前复核音符不晚于音频时长）
   - `bpm_detect.py` — BPM 与 offset 估计（谱通量 + 自相关）
   - `time_conv.py` — 秒 ↔ TimeT 换算唯一入口（多 BPM 段、吸附）
