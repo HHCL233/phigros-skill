@@ -13,12 +13,13 @@
 - **缓动手册**（references/easing.md）：RPE easingType 0~29 的行为与选用建议
 - **工具脚本**（scripts/）：
   - `scaffold.py` — 生成谱面骨架（chart JSON + info.txt，默认 1 主音符线 + 5 表演线）
-  - `validate_chart.py` — 格式校验（ERROR 硬性拦截 / WARNING 提示表演手法）
-  - `package_pez.py` — 打包 `.pez`（zip 格式，含 info.txt/音频/曲绘/chart）
+  - `validate_chart.py` — 格式校验（ERROR 硬性拦截：含音符超出音频时长；WARNING 提示手法：含排键整齐/押数密度/虚空采音，其中音符越界与虚空采音检查需 `--audio`）
+  - `package_pez.py` — 打包 `.pez`（zip 格式，含 info.txt/音频/曲绘/chart，打包前复核音符不晚于音频时长）
   - `bpm_detect.py` — BPM 与 offset 估计（谱通量 + 自相关）
   - `time_conv.py` — 秒 ↔ TimeT 换算唯一入口（多 BPM 段、吸附）
   - `segment_analyze.py` — 音频按固定时长（默认 0.2 秒）切片并逐片分析（响度/频段能量/起音/基频），输出 json+csv 供采音打点
   - `spectrum.py` — 生成音频频谱图（PNG，自带编码器）+ 逐时段主频 csv + 摘要 json，供看旋律/鼓点与分段
+  - `melody.py` — 提取指定时间区间（`--start`/`--end`，缺省 end=音频结尾）的旋律：逐帧自相关测音高，输出音名序列 + 音符表（json/csv 可选）
   - `gen_config.py` — 按「配置编号（A~G）+ 区间 + 首音 x + 几分」生成配置骨架 notes JSON（只输出 JSON，不写谱面）
 - **真实谱面回归基线**：校验器对多张真实 RPE 谱面保持 0 ERROR
 
@@ -47,7 +48,7 @@ AI：  bpm_detect 估计 BPM/offset → 与你确认 → scaffold 生成骨架 �
 ## 设计要点
 
 - **配置取材**：AI 排键推荐优先使用配置库整理的配置与手法库的手法，可按实际情况调整参数或新增配置
-- **4k/5k 约束**：双押海与纵连少用（单段 ≤4 组 / ≤6 连）；3 押及以上只在高潮段且少而精；押数按同刻不同 x 计，同位叠判定只算 1 押
+- **4k/5k 约束**：双押海与纵连少用（单段 ≤4 组 / ≤6 连）；3 押只在高潮段且少而精，**4 押及以上一律禁止**；押数按同刻不同 x 计，同位叠判定只算 1 押
 - **手感红线**：同刻/同期判定最小间距、长条末尾禁接同 x Tap、Drag 后禁接近 x Tap、开场不出 note、主线落点等
 - **校验哲学**：ERROR 只拦格式损坏；WARNING 提示表演手法（真实谱面大量合法偏离，不升为 ERROR）
 

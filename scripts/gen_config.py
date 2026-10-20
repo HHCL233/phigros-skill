@@ -20,7 +20,7 @@
   --div          几分音符 = 相邻音的拍间距 step=4/div（四分=1 拍）：4→1、8→1/2、16→1/4、32→1/8、
                  64→1/16；三连：12→1/3（三连八分）、24→1/6（三连十六分）、48→1/12
   --config       配置编号（A~G 见 configs.md 配置库）；H 为结构手法，不是键型配置
-  --stack        叠判定/散点押数（A4/A5，2~4，默认 2/3）
+  --stack        叠判定/散点押数（A4 2~4；A5 固定 3，4 押及以上禁用）
   --spread       A8 宽幅间距（默认 300）
   --hold         E1 Hold 时长（拍，默认 0.5）；E4 固定 1/16 拍拖尾
   --direction    up/down（楼梯/同侧双押的走向，默认 down）
@@ -34,7 +34,7 @@
   A3 中侧双押        | 每步 2 个 Tap，x 与 0
   A4 同位叠判定      | 每步同刻同 x 叠 --stack 个不同类型（4 叠含 1/16 拍微 Hold；
                      | 同位叠判定是合法手法，校验器的「同刻间距 ≤50」WARNING 可忽略）
-  A5 散点 3~4 押     | 每步在 x 邻域铺 --stack 个不同 x（135 网格展开）
+  A5 散点 3 押       | 每步在 x 邻域铺 3 个不同 x（135 网格展开；4 押及以上禁用）
   A6 同侧下行双押    | 每步 2 个 Tap，沿 52.5 网格整体步进
   A7 八分双押海      | 同 A2 几何（连续双押，单段 ≤4 组即收，勿滥用）
   A8 非对称宽幅双押  | 每步 2 个 Tap，间距 --spread（默认 300）
@@ -166,13 +166,13 @@ def build(cfg, x, start, end, step, o):
                 N.append(note(kinds[k], t, x, end=end))
         return _finish(N, o, "同刻同 x 叠 %d 判定（单点全吃，押数只算 1）" % n)
     elif cfg == "A5":
-        n = max(3, min(4, o.stack if o.stack >= 3 else 3))
-        offs = {3: (0, GRID * 2, -GRID * 2), 4: (0, GRID * 2, -GRID * 2, GRID * 4)}[n]
+        n = 3
+        offs = (0, GRID * 2, -GRID * 2)
         for t in ts:
             for off in offs:
                 pos = max(-X_LIMIT, min(X_LIMIT, x + off))
                 N.append(note(1, t, pos))
-        return _finish(N, o, "%d 押散点（仅高潮段少量使用）" % n)
+        return _finish(N, o, "3 押散点（仅高潮段少量使用，4 押及以上禁用）")
     elif cfg == "A6":
         for i, t in enumerate(ts):
             a = max(-X_LIMIT, min(X_LIMIT, x + d * 52.5 * i))
@@ -282,7 +282,7 @@ def main(argv=None):
     ap.add_argument("--end", required=True, type=parse_timet, help='结束 TimeT（不含），如 24/0/1')
     ap.add_argument("--x", required=True, type=float, help="第一个 note 的 positionX")
     ap.add_argument("--div", type=int, default=16, help="几分音符（4/8/16/24/32/64…，默认 16）")
-    ap.add_argument("--stack", type=int, default=2, help="A4/A5 押数（2~4，A5 默认 3）")
+    ap.add_argument("--stack", type=int, default=2, help="A4 同位叠判定层数（2~4；A5 固定 3 押，4 押及以上禁用）")
     ap.add_argument("--spread", type=float, default=300.0, help="A8 宽幅间距（默认 300）")
     ap.add_argument("--hold", type=float, default=0.5, help="E1 Hold 时长（拍，默认 0.5）")
     ap.add_argument("--direction", choices=("up", "down"), default="down", help="楼梯/同侧双押走向")
