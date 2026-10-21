@@ -2,15 +2,17 @@
 """频谱分析：把整首音乐转成频谱图，供写谱采音/看旋律与鼓点。
 
 输出（默认写在音频同目录）：
-  <名>_spectrum.png   频谱图（STFT 谱图，纵轴频率、横轴时间，带八度/时间网格线）
-  <名>_peaks.csv      逐时段主频（含音名），用于定位旋律与打点
-  stdout              摘要 JSON：频段能量占比、谱质心、全曲主频、图像坐标映射
+  <名>_spectrogram.npz 完整 dB 矩阵（db/freqs/times + sr/n_fft/hop/peak_db），采音的唯一数值依据
+  <名>_spectrum.png    频谱图（STFT 谱图，纵轴频率、横轴时间，带八度/时间网格线，仅供看轮廓）
+  <名>_peaks.csv       逐时段主频（含音名），用于快速定位旋律与打点
+  stdout               摘要 JSON：频段能量占比、谱质心、全曲主频、图像坐标映射
 
 用法：
   python3 spectrum.py <音频>                          # 默认 log 频率轴，20Hz~奈奎斯特
   python3 spectrum.py <音频> --start 64 --end 96     # 只看 64~96s 段落
   python3 spectrum.py <音频> --scale linear --height 800
-  python3 spectrum.py <音频> --no-png --no-csv       # 只要摘要 JSON
+  python3 spectrum.py <音频> --no-png --no-csv       # 只要 npz 与摘要 JSON
+  python3 spectrum.py <音频> --no-npz                # 不写完整 dB 矩阵
 
 依赖：numpy（必需）、ffmpeg（非 WAV 音频必需）。PNG 由脚本自带编码器生成，不依赖 matplotlib/PIL。
 """
@@ -229,6 +231,7 @@ def main(argv=None):
     ap.add_argument("--out-dir", default=None, help="输出目录（默认音频所在目录）")
     ap.add_argument("--no-png", action="store_true", help="不输出频谱图")
     ap.add_argument("--no-csv", action="store_true", help="不输出主频 CSV")
+    ap.add_argument("--no-npz", action="store_true", help="不输出完整 dB 矩阵 npz")
     args = ap.parse_args(argv)
 
     if not os.path.exists(args.audio):
@@ -249,9 +252,17 @@ def main(argv=None):
     frames = np.lib.stride_tricks.sliding_window_view(y, n_fft)[::hop]
     spec = np.abs(np.fft.rfft(frames * win, axis=1)) * (2.0 / win.sum())
     db = 20.0 * np.log10(np.maximum(spec, 1e-10))
-    db -= db.max()
+    peak_db = float(db.max())
+    db -= peak_db  # 相对峰值 dB；绝对 dB = db + peak_db
     freqs = np.fft.rfftfreq(n_fft, 1.0 / sr)
     times = np.arange(frames.shape[0]) * (hop / float(sr)) + (args.start or 0.0)
+
+    npz_name = None
+    if not args.no_npz:
+        npz_name = os.path.join(out_dir, "%s_spectrogram.npz" % stem)
+        np.savez_compressed(npz_name, db=db.astype(np.float32), freqs=freqs.astype(np.float32),
+                            times=times.astype(np.float32), sr=sr, n_fft=n_fft, hop=hop,
+                            start=float(args.start or 0.0), peak_db=peak_db)
 
     png_name = csv_name = None
     f_lo, f_hi = None, None
@@ -301,6 +312,10 @@ def main(argv=None):
         "n_fft": n_fft,
         "hop": hop,
         "frames": int(frames.shape[0]),
+        "npz": npz_name,
+        "npz_shape": [int(db.shape[0]), int(db.shape[1])],
+        "npz_note": "db 为相对峰值 dB（float32，帧×频点），绝对 dB = db + peak_db；freqs=Hz，times=秒",
+        "peak_db": round(peak_db, 2),
         "png": png_name,
         "csv": csv_name,
         "png_axis": None if f_lo is None else {
@@ -317,7 +332,7 @@ def main(argv=None):
                                  "p90": round(float(np.percentile(centroid, 90)), 1)},
         "global_peaks": global_peaks,
         "slice_peaks_file": csv_name,
-        "hint": "逐时段能量/起音/音高请配合 segment_analyze.py（0.2s 粒度）使用",
+        "hint": "采音先读 npz 的 db 按拍网格算频段能量/谱通量定打点；0.2s 粒度响度/起音/音高可配合 segment_analyze.py",
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0

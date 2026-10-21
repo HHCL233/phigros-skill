@@ -23,8 +23,10 @@ description: 为音乐编写 Phigros 谱面（RPE JSON 与 .pez 打包）。Use 
    （毫秒；suggested_offset_ms 可直接用作 META.offset）。同时确认：目标难度（EZ/HD/IN/AT，EZ≤10、HD≤14、IN≤17）、
    曲名/曲师/谱师等元数据、是否需要表演。
 2. **分段设计**：按 intro / verse / build-up / drop / chorus / bridge / outro 列时间轴，为每段定采音对象与密度（见 charting.md）。
-   **采音必须依据频谱数据**：先运行 `python3 scripts/spectrum.py <音乐文件>` 得到频谱图 PNG + 逐时段主频 csv + 摘要 json
-   （可用 `--start/--end` 逐段放大），据频谱图定位段落/鼓点/旋律、对 csv 里的时间与音名核拍位；
+   **采音必须基于完整 dB 矩阵**：先运行 `python3 scripts/spectrum.py <音乐文件>` 生成 `<名>_spectrogram.npz`
+   （完整 dB 矩阵，采音的唯一数值依据）、频谱图 PNG（仅看整体轮廓）与逐时段主频 csv（仅粗定位）；
+   用 numpy 读取 npz 的 `db/freqs/times`，按 BPM/offset 的拍网格统计低频/中频/高频能量与谱通量，取 onset 峰作为打点候选
+   （数值方法见 charting.md「采音」第 2 步；可用 `--start/--end` 分段导出以控制文件大小）。
    需要逐片响度/起音/基频时再运行 `python3 scripts/segment_analyze.py <音乐文件>`（默认 0.2 秒一片，输出 json+csv）。
    某段旋律看不清/听不准时，用 `python3 scripts/melody.py <音乐文件> --start <秒> [--end <秒>]` 直接输出该段旋律
    （音名序列 + 音符表，缺省 --end 表示到音频结尾）；低音重的段落抬高 `--band-lo/--fmin` 聚焦旋律区。
@@ -59,12 +61,15 @@ description: 为音乐编写 Phigros 谱面（RPE JSON 与 .pez 打包）。Use 
 
 ## 排键与表演红线（scripts/validate_chart.py 自动检查）
 
-- **采音必须有频谱依据**：先跑 `scripts/spectrum.py` 出频谱图与主频表，据频谱图/`_peaks.csv`（配合 segment_analyze 的 onset）定位打点，不得凭空排键。
+- **采音必须基于完整 dB 矩阵**：跑 `scripts/spectrum.py` 后用 `_spectrogram.npz` 的 `db/freqs/times`，按拍网格算频段能量与谱通量定打点；PNG 只能看轮廓、`_peaks.csv` 只能粗定位，不得作为唯一依据，更不得凭听感或整体音量排键。
 - 排键**推荐优先使用** configs.md 配置库（A~J）的配置；可按实际情况调整参数（x/拍位/方向/镜像/步进）或新增配置。
 - **排键整齐**：全曲统一一套 x 网格（75 系 / 67.5 系 / 自定义对称网格），段内步进规整、左右对称；
   音符 x 大量落在网格外时校验器给 WARNING（乱序坐标少用，配置库 B2 仅在用户要求该风格时用）。
 - **谱面不单调（重复部分少）**：同一配置/手法连续原样复读不超过 2~3 次，之后必须变型（换 x / 镜像 / 换拍位 / 换配置 / 换线 / 换音型）；
   禁止整段（≥8 拍）原样复制，二次副歌等重复乐段必须做变奏；手段见 charting.md「避免单调」。
+- **不乱用 16 分配置**：十六分/三连十六分/三十二分**只放在频谱起音密集的乐句**，疏句降回八分/四分（或留白）；
+  禁止整段无差别铺 16 分、全曲默认 16 分、用 16 分连发凑密度；同一 16 分配置连跑约 8 拍即须换细分/音型或留呼吸
+  （F1/F2/F4、J1/J6 等 16 分配置按起音密度裁剪，不能整段照搬）。
 - **禁止 4 押及以上**：同刻**不同 x** 的可判音符最多 3 个；3 押只限高潮段零星点缀。
   重音改用双押、3 押、同位叠判定（同刻同 x 叠不同类型，只算 1 押，不受此限）或 Drag。
 - 同一判定线同一 eventLayer 内相同时间不要有两个同类型事件。

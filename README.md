@@ -18,7 +18,7 @@
   - `bpm_detect.py` — BPM 与 offset 估计（谱通量 + 自相关）
   - `time_conv.py` — 秒 ↔ TimeT 换算唯一入口（多 BPM 段、吸附）
   - `segment_analyze.py` — 音频按固定时长（默认 0.2 秒）切片并逐片分析（响度/频段能量/起音/基频），输出 json+csv 供采音打点
-  - `spectrum.py` — 生成音频频谱图（PNG，自带编码器）+ 逐时段主频 csv + 摘要 json，供看旋律/鼓点与分段
+  - `spectrum.py` — 生成完整 dB 矩阵（`_spectrogram.npz`，采音数值依据）+ 频谱图 PNG + 逐时段主频 csv + 摘要 json
   - `melody.py` — 提取指定时间区间（`--start`/`--end`，缺省 end=音频结尾）的旋律：逐帧自相关测音高，输出音名序列 + 音符表（json/csv 可选）
   - `gen_config.py` — 按「配置编号（A~G）+ 区间 + 首音 x + 几分」生成配置骨架 notes JSON（只输出 JSON，不写谱面）
 - **真实谱面回归基线**：校验器对多张真实 RPE 谱面保持 0 ERROR
