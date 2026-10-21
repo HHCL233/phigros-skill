@@ -379,32 +379,18 @@ def check_notes(notes, numOfNotes, ctx):
                 warn(f"{where}: 疑似重复音符 startTime={sig[0]} type={t} x={sig[2]}")
             seen.add(sig)
 
-    # 同刻间距检查：同判定线同一时刻，Tap-Tap 或 Tap-Hold 的 x 间距必须 > 50（用户明确要求）
-    taps_by_beat = {}  # beat -> [(x, where)]
-    holds_by_beat = {}  # beat -> [x]
+    # 同刻间距检查改由 check_chord_spacing 统一按屏幕坐标处理（含跨线多押）
+
+    # 双押海 / 纵连过长检查：均为高密度手段，用户要求少用（仅非假 Tap）
+    taps_by_beat = {}  # beat -> [(x, index)]
     for i, n in enumerate(notes):
-        if not isinstance(n, dict) or n.get("isFake"):
+        if not isinstance(n, dict) or n.get("isFake") or n.get("type") != 1:
             continue
         if not (isinstance(n.get("startTime"), list) and len(n["startTime"]) == 3):
             continue
-        b = beat(n["startTime"])
-        if n.get("type") == 1 and is_num(n.get("positionX")):
-            taps_by_beat.setdefault(b, []).append((n["positionX"], i))
-        elif n.get("type") == 2 and is_num(n.get("positionX")):
-            holds_by_beat.setdefault(b, []).append(n["positionX"])
-    for b, items in taps_by_beat.items():
-        for i in range(len(items)):
-            for j in range(i + 1, len(items)):
-                if abs(items[i][0] - items[j][0]) <= 50:
-                    warn(f"{ctx}.notes[{items[j][1]}]: 同刻两个 Tap 间距 ≤ 50"
-                         f"（x={items[i][0]} 与 x={items[j][0]} @beat {b:.4f}；用户要求：相同时间内同判定线两个 Tap 间距必须 > 50）")
-        for tx, idx in items:
-            for hx in holds_by_beat.get(b, []):
-                if abs(tx - hx) <= 50:
-                    warn(f"{ctx}.notes[{idx}]: 同刻 Tap 与 Hold 间距 ≤ 50"
-                         f"（Tap x={tx} 与 Hold x={hx} @beat {b:.4f}；用户要求：相同时间内同判定线 Tap 与 Hold 间距必须 > 50）")
-
-    # 双押海 / 纵连过长检查：均为高密度手段，用户要求少用（仅非假 Tap）
+        if not is_num(n.get("positionX")):
+            continue
+        taps_by_beat.setdefault(beat(n["startTime"]), []).append((n["positionX"], i))
     if taps_by_beat:
         bs = sorted(taps_by_beat)
         cur = 0
@@ -628,6 +614,7 @@ def validate(chart, audio_duration=None):
         elif line.get("numOfNotes", 0) != 0:
             warn(f"{ctx}: 无 notes 字段但 numOfNotes={line.get('numOfNotes')}")
         check_line_speed(line, ctx)
+    check_chord_spacing(lines)
     check_chord_density(lines)
     check_x_grid(lines)
     if audio_duration:
@@ -642,6 +629,157 @@ def validate(chart, audio_duration=None):
         warn(f"有 {speed_easing_fields} 个 speedEvent 含 easingType/easingLeft/easingRight/bezier 字段"
              "（RPE 1.7 导出行为，播放器忽略；自建谱不要写）")
     return {"total": total, "types": type_count, "lines": len(lines), "bpm_segments": len(bpm_list)}
+
+
+def check_chord_spacing(lines):
+    """多押（同刻 >=2 可判音符）间距检查：按屏幕坐标计算，跨判定线同样生效。
+
+    屏幕坐标 = 线位置(moveX/moveY) + positionX × (cos(rotate), sin(rotate))（事件值为绝对偏移，各层求和），
+    间距取两音屏幕坐标的欧氏距离（竖线/旋转线上的纵向间距同样计入）。
+    - 同线：间距 <=50 警告；完全重合（<=3）且不同类型 = 同位叠判定，允许。
+    - 跨线：间距 <=50 警告；完全重合（<=3）视为跨线同位叠判，允许。
+    """
+    groups = {}
+    for li, line in enumerate(lines):
+        if not isinstance(line, dict):
+            continue
+        for idx, n in enumerate(line.get("notes") or []):
+            if not isinstance(n, dict) or n.get("isFake"):
+                continue
+            st = n.get("startTime")
+            if not (isinstance(st, list) and len(st) == 3 and all(is_num(v) for v in st)):
+                continue
+            if not is_num(n.get("positionX")) or n.get("type") not in NOTE_TYPES:
+                continue
+            b = beat(st)
+            mx = _line_event_value(line, "moveXEvents", b)
+            my = _line_event_value(line, "moveYEvents", b)
+            rad = math.radians(_line_event_value(line, "rotateEvents", b))
+            sx = mx + n["positionX"] * math.cos(rad)
+            sy = my + n["positionX"] * math.sin(rad)
+            groups.setdefault(round(b, 6), []).append((sx, sy, li, idx, n.get("type")))
+    bad = []
+    for b, items in groups.items():
+        if len(items) < 2:
+            continue
+        for i in range(len(items)):
+            for j in range(i + 1, len(items)):
+                a, c = items[i], items[j]
+                gap = math.hypot(a[0] - c[0], a[1] - c[1])
+                same_line = a[2] == c[2]
+                if same_line:
+                    if gap <= 50 and not (gap <= 3 and a[4] != c[4]):
+                        bad.append((b, a, c, gap))
+                elif 3 < gap <= 50:
+                    bad.append((b, a, c, gap))
+    if bad:
+        b, a, c, gap = bad[0]
+        warn(f"多押间距过近 {len(bad)} 对：如 beat {b:.4f} 屏幕({a[0]:.1f},{a[1]:.1f})(线{a[2]}) 与 "
+             f"({c[0]:.1f},{c[1]:.1f})(线{c[2]}) 间距 {gap:.1f} ≤50"
+             f"（用户要求：多押的多个音符不要靠太近；同线/跨线完全重合的叠判定除外）")
+
+
+def _ease_value(et, t):
+    """RPE 缓动 0~29 求值（30+ 与 bezier 退回线性；仅用于间距估算）。"""
+    t = max(0.0, min(1.0, t))
+    sine_in = lambda u: 1 - math.cos(math.pi * u / 2)
+    sine_out = lambda u: math.sin(math.pi * u / 2)
+    quad_in = lambda u: u * u
+    quad_out = lambda u: 1 - (1 - u) ** 2
+    cubic_in = lambda u: u ** 3
+    cubic_out = lambda u: 1 + (u - 1) ** 3
+    quart_in = lambda u: u ** 4
+    quart_out = lambda u: 1 - (1 - u) ** 4
+    quint_in = lambda u: u ** 5
+    quint_out = lambda u: 1 + (u - 1) ** 5
+    expo_in = lambda u: 0.0 if u <= 0 else 2 ** (10 * u - 10)
+    expo_out = lambda u: 1 - 2 ** (-10 * u)
+    circ_in = lambda u: 1 - math.sqrt(max(0.0, 1 - u * u))
+    circ_out = lambda u: math.sqrt(max(0.0, 1 - (u - 1) ** 2))
+    back_in = lambda u: (2.70158 * u - 1.70158) * u * u
+    back_out = lambda u: (2.70158 * u - 1) * (u - 1) ** 2 + 1
+
+    def elastic_out(u):
+        return 2 ** (-10 * u) * math.sin((10 * u - 0.75) * 2 * math.pi / 3) + 1
+
+    elastic_in = lambda u: 1 - elastic_out(1 - u)
+
+    def bounce_out(u):
+        if u < 1 / 2.75:
+            return 7.5625 * u * u
+        if u < 2 / 2.75:
+            return 7.5625 * (u - 1.5 / 2.75) ** 2 + 0.75
+        if u < 2.5 / 2.75:
+            return 7.5625 * (u - 2.25 / 2.75) ** 2 + 0.9375
+        return 7.5625 * (u - 2.625 / 2.75) ** 2 + 0.984375
+
+    bounce_in = lambda u: 1 - bounce_out(1 - u)
+
+    def io(fin):
+        return fin(2 * t) / 2 if t < 0.5 else 1 - fin(2 - 2 * t) / 2
+
+    in_map = {3: sine_in, 5: quad_in, 9: cubic_in, 11: quart_in, 15: quint_in,
+              17: expo_in, 18: circ_in, 21: back_in, 25: elastic_in, 27: bounce_in}
+    out_map = {2: sine_out, 4: quad_out, 8: cubic_out, 10: quart_out, 14: quint_out,
+               16: expo_out, 19: circ_out, 20: back_out, 24: elastic_out, 26: bounce_out}
+    io_map = {6: sine_in, 7: quad_in, 12: cubic_in, 13: quart_in, 22: circ_in,
+              23: back_in, 29: elastic_in, 28: bounce_in}
+    if et == 0:
+        return 0.0
+    if et in in_map:
+        return in_map[et](t)
+    if et in out_map:
+        return out_map[et](t)
+    if et in io_map:
+        return io(io_map[et])
+    return t
+
+
+def _event_value(events, b):
+    if not isinstance(events, list) or not events:
+        return 0.0
+    hit = prev = first = None
+    for e in events:
+        if not isinstance(e, dict) or not is_num(e.get("start")) or not is_num(e.get("end")):
+            continue
+        st, en = e.get("startTime"), e.get("endTime")
+        if not (isinstance(st, list) and len(st) == 3 and isinstance(en, list) and len(en) == 3):
+            continue
+        if first is None:
+            first = e
+        sb, eb = beat(st), beat(en)
+        if sb <= b <= eb:
+            hit, hs, he = e, sb, eb
+            break
+        if eb < b:
+            prev = e
+        if sb > b:
+            break
+    if hit is None:
+        if prev is not None:
+            return prev["end"]
+        return first["start"] if first else 0.0
+    start, end = hit["start"], hit["end"]
+    if he - hs < 1e-9:
+        return start
+    p = (b - hs) / (he - hs)
+    et = hit.get("easingType", 1)
+    et = int(et) if is_num(et) else 1
+    left, right = hit.get("easingLeft", 0.0), hit.get("easingRight", 1.0)
+    if is_num(left) and is_num(right) and 0 <= left < right <= 1 and (left > 0 or right < 1):
+        p = (p - left) / (right - left)
+        v = _ease_value(et, left) + (_ease_value(et, right) - _ease_value(et, left)) * _ease_value(et, p)
+    else:
+        v = _ease_value(et, p)
+    return start + (end - start) * v
+
+
+def _line_event_value(line, kind, b):
+    total = 0.0
+    for layer in line.get("eventLayers") or []:
+        if isinstance(layer, dict):
+            total += _event_value(layer.get(kind) or [], b)
+    return total
 
 
 def check_chord_density(lines):

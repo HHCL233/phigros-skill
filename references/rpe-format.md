@@ -174,7 +174,7 @@ RPE 1.5.0+ 可选 `"hitSound": "文件名"`（打击音效）。
 - bezier：`bezier: 1` 时 `bezierPoints = [c1x, c1y, c2x, c2y]` 为三次贝塞尔两控制点（c1x、c2x ∈ [0,1]），此时忽略 easingType。
 - 层内同类事件按 startTime 升序；谱面开头应有覆盖到 0 时刻的事件（通常从 `[0,0,1]` 开始）。
 - `linkgroup`：多事件编辑链接组，默认 0。
-- 缓动选用参考（详见 [easing.md](easing.md)）：音符线 moveX 用 1（linear，匀速下落观感）；表演事件常用 2/3（sine）、4/5（quad）、8/9（cubic）、18/19（circ）、20/21（back），少数 24（elastic Out）做强调。事件总量上 moveX/alpha/rotate 远多于 moveY。
+- 缓动选用参考（详见 [easing.md](easing.md)）：音符线 moveX 用 1（linear，匀速下落观感）；**其余判定线移动（moveX/moveY/rotate）尽量不用 1 号**，表演线/主线过渡用 2/3（sine）、4/5（quad）、8/9（cubic）、18/19（circ）、20/21（back），少数 24（elastic Out）做强调；只有恒定值事件仍用 1 号。事件总量上 moveX/alpha/rotate 远多于 moveY。
 
 ### 事件层级 eventLayers
 

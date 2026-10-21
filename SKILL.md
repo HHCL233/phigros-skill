@@ -12,7 +12,7 @@ description: 为音乐编写 Phigros 谱面（RPE JSON 与 .pez 打包）。Use 
 | 文档 | 内容 | 何时读 |
 | --- | --- | --- |
 | [references/charting.md](references/charting.md) | 采音、难度标尺、真实谱面画像、手感红线、表演规范、生成顺序 | 步骤 2 起 |
-| [references/configs.md](references/configs.md) | 配置库 A~I + 表演手法库 P~S（排键与演出的推荐素材库） | 步骤 3 |
+| [references/configs.md](references/configs.md) | 配置库 A~J + 表演手法库 P~S（排键与演出的推荐素材库） | 步骤 3 |
 | [references/rpe-format.md](references/rpe-format.md) | 格式规范全文（字段、事件、control 数组、时间系统） | 步骤 4 |
 | [references/easing.md](references/easing.md) | 缓动编号速查 | 步骤 3 |
 
@@ -31,7 +31,7 @@ description: 为音乐编写 Phigros 谱面（RPE JSON 与 .pez 打包）。Use 
    **旋律/音域/时值走向可用于判段落情感**（音高上行=推进紧张、下行+长音=回落抒情、音域整体偏高=明亮亢奋、
    同音反复偏低=压抑蓄力），据此定该段密度与演出幅度；判据表见 charting.md「采音」第 5 步。
    读图与采音步骤见 charting.md「采音」；不得无频谱依据地排键。
-3. **排键与表演**：配置**推荐优先使用** configs.md 配置库（A~I），表演**推荐优先使用**手法库（P~S），可按实际情况调整参数或新增配置；手感红线见 charting.md，缓动见 easing.md。
+3. **排键与表演**：配置**推荐优先使用** configs.md 配置库（A~J），表演**推荐优先使用**手法库（P~S），可按实际情况调整参数或新增配置；手感红线见 charting.md，缓动见 easing.md。
    键型骨架用 `python3 scripts/gen_config.py --config <编号> --start <TimeT> --end <TimeT> --x <首音x> --div <几分>`
    生成（只输出 notes JSON，写进哪条判定线由 AI 决定）。
    **生成结果只是骨架，必须按采音逐音微调**：挪拍位贴合 onset、改 x/类型、镜像、增删音、换拍位避免配置重复，
@@ -60,7 +60,7 @@ description: 为音乐编写 Phigros 谱面（RPE JSON 与 .pez 打包）。Use 
 ## 排键与表演红线（scripts/validate_chart.py 自动检查）
 
 - **采音必须有频谱依据**：先跑 `scripts/spectrum.py` 出频谱图与主频表，据频谱图/`_peaks.csv`（配合 segment_analyze 的 onset）定位打点，不得凭空排键。
-- 排键**推荐优先使用** configs.md 配置库（A~I）的配置；可按实际情况调整参数（x/拍位/方向/镜像/步进）或新增配置。
+- 排键**推荐优先使用** configs.md 配置库（A~J）的配置；可按实际情况调整参数（x/拍位/方向/镜像/步进）或新增配置。
 - **排键整齐**：全曲统一一套 x 网格（75 系 / 67.5 系 / 自定义对称网格），段内步进规整、左右对称；
   音符 x 大量落在网格外时校验器给 WARNING（乱序坐标少用，配置库 B2 仅在用户要求该风格时用）。
 - **谱面不单调（重复部分少）**：同一配置/手法连续原样复读不超过 2~3 次，之后必须变型（换 x / 镜像 / 换拍位 / 换配置 / 换线 / 换音型）；
@@ -77,6 +77,7 @@ description: 为音乐编写 Phigros 谱面（RPE JSON 与 .pez 打包）。Use 
 - Hold `endTime ≥ startTime`；同键相邻音符间隔 ≥1/32 拍。
 - 长条末尾同 x 不放 Tap（Drag/Flick 接续允许）。
 - 同刻 Tap-Tap、同刻 Tap-Hold、Hold 期间 Tap-Hold，|Δx| 均 >50（同位叠判定不受此限）。
+- **多押内音符不要靠太近**：同刻 ≥2 可判音符按屏幕坐标（含跨线）两两间距 >50；完全重合的叠判定（≤3）除外。
 - Drag 后 1/4 拍内不接 |Δx| < 50 的 Tap（错开 x 或拉开间隔均可）。
 
 ## 风格偏好（校验器不检查）
@@ -86,6 +87,7 @@ description: 为音乐编写 Phigros 谱面（RPE JSON 与 .pez 打包）。Use 
 - 少用双押海（单段 ≤4 组）与纵连（单段 ≤6 连）；3 押只在高潮段使用，少而精；**4 押及以上一律不用**。
 - 复杂表演推荐优先用 configs.md 手法库（P~S）；可按曲风调整参数或新增手法。
 - 表演线最少 5 条（scaffold `--lines` 默认 6 = 1 主 + 5 表演）；主线最好有与歌曲情感和段落相对应的移动（moveY 与 rotate），无幅度限制。
+- 判定线移动（moveX/moveY/rotate）尽量不用 1 号 linear，除承载音符的音符线外；表演线与主线过渡用 2/6 等缓动。
 - 采音依据频谱等音乐信息（onset、低频鼓点能量、人声/旋律频段轮廓）；BPM 未确认前不要开始排键。
 - 双手配置注意左右手分配；表演服务于音乐，不为炫技牺牲可读性。
 - 写谱前对照 charting.md「真实谱面画像」，使密度与难度档对齐。
